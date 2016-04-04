@@ -554,8 +554,23 @@ public class RemoteBuildConfiguration extends Builder {
                 listener.getLogger().println("Checking parameters of #" + buildNumber);
                 String validateUrlString = this.buildGetUrl(jobName, securityToken) + "/" + buildNumber + "/api/json/";
                 JSONObject validateResponse = sendHTTPCall(validateUrlString, "GET", build, listener);
+                for (int attempts = 0; (attempts < 60) && (validateResponse == null); attempts++) {
+                    listener.getLogger().println("Query failed. Current 'nextbuildnumber' is "+nextBuildNumber);
+                    listener.getLogger().println("Build might not have started yet.");
+                    listener.getLogger().println("Waiting for " + this.pollInterval + " seconds until next retry. Attempt #"+attempts);
+
+                    // Sleep for 'pollInterval' seconds.
+                    // Sleep takes miliseconds so need to convert
+                    // this.pollInterval to milisecopnds (x 1000)
+                    try {
+                        Thread.sleep(this.pollInterval * 1000);
+                    } catch (InterruptedException e) {
+                        this.failBuild(e, listener);
+                    }
+                    validateResponse = sendHTTPCall(validateUrlString, "GET", build, listener);
+                }
                 if (validateResponse == null) {
-                    listener.getLogger().println("Query failed.");
+                    listener.getLogger().println("Query failed for remote build number #" + buildNumber+ ". Retry with next remote build number");
                     continue;
                 }
                 JSONArray actions = validateResponse.getJSONArray("actions");
