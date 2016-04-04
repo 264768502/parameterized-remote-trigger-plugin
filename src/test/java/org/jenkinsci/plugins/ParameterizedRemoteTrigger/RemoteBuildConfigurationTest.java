@@ -1,7 +1,11 @@
 package org.jenkinsci.plugins.ParameterizedRemoteTrigger;
 
 import hudson.model.FreeStyleProject;
+import hudson.model.ParametersDefinitionProperty;
+import hudson.model.StringParameterDefinition;
 import net.sf.json.JSONObject;
+
+import org.junit.Ignore;
 import org.junit.Rule;
 import org.junit.Test;
 import org.jvnet.hudson.test.JenkinsRule;
@@ -27,6 +31,9 @@ public class RemoteBuildConfigurationTest {
         descriptor.setRemoteSites(remoteJenkinsServer);
 
         FreeStyleProject remoteProject = jenkinsRule.createFreeStyleProject();
+        remoteProject.addProperty(new ParametersDefinitionProperty(
+                new StringParameterDefinition("parameterName1", "value1"),
+                new StringParameterDefinition("parameterName2", "value2")));
 
         FreeStyleProject project = jenkinsRule.createFreeStyleProject();
         RemoteBuildConfiguration remoteBuildConfiguration = new RemoteBuildConfiguration(
