@@ -1,13 +1,21 @@
 package org.jenkinsci.plugins.ParameterizedRemoteTrigger;
 
-import hudson.model.FreeStyleProject;
-import hudson.model.ParametersDefinitionProperty;
-import hudson.model.StringParameterDefinition;
+import hudson.FilePath;
+import hudson.model.*;
 import net.sf.json.JSONObject;
-
 import org.junit.Rule;
 import org.junit.Test;
 import org.jvnet.hudson.test.JenkinsRule;
+import org.jvnet.hudson.test.WithoutJenkins;
+
+import java.io.IOException;
+import java.net.URL;
+
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertTrue;
+import static org.mockito.Matchers.any;
+import static org.mockito.Matchers.anyString;
+import static org.mockito.Mockito.*;
 
 public class RemoteBuildConfigurationTest {
     @Rule
@@ -42,5 +50,52 @@ public class RemoteBuildConfigurationTest {
 
         jenkinsRule.waitUntilNoActivity();
         jenkinsRule.buildAndAssertSuccess(project);
+    }
+    
+    private RemoteBuildConfiguration prepareSpy(String expectedJson) throws IOException {
+        RemoteJenkinsServer jenkinsServer = mock(RemoteJenkinsServer.class);
+        when(jenkinsServer.getAddress()).thenReturn(new URL("http://test.com"));
+        
+        RemoteBuildConfiguration configuration = new RemoteBuildConfiguration("remoteJenkinsName", true, "job", "token",
+                "parameters", true, new JSONObject(), new JSONObject(), true, true, 10);
+        RemoteBuildConfiguration spy = spy(configuration);
+        doReturn(jenkinsServer).when(spy).findRemoteHost(anyString());
+        
+        doReturn(JSONObject.fromObject(expectedJson)).when(spy).sendHTTPCall(anyString(), anyString(), any(Run.class), any(FilePath.class), any(TaskListener.class));
+        
+        return spy;
+    }
+
+    @Test
+    @WithoutJenkins
+    public void givenAJobWithNoActions_WhenCheckingIfTheJobIsParameterized_ThenItShouldReturnFalse() throws IOException {
+        
+        String json = "{\"actions\":[],\"description\":\"\",\"displayName\":\"test_remote\",\"displayNameOrNull\":null,\"name\":\"test_remote\",\"url\":\"http://jenkins.com/job/test_remote/\",\"buildable\":true,\"builds\":[],\"color\":\"notbuilt\",\"firstBuild\":null,\"healthReport\":[],\"inQueue\":false,\"keepDependencies\":false,\"lastBuild\":null,\"lastCompletedBuild\":null,\"lastFailedBuild\":null,\"lastStableBuild\":null,\"lastSuccessfulBuild\":null,\"lastUnstableBuild\":null,\"lastUnsuccessfulBuild\":null,\"nextBuildNumber\":1,\"property\":[{},{},{\"includeTestSummary\":false,\"notifyAborted\":false,\"notifyBackToNormal\":false,\"notifyFailure\":false,\"notifyNotBuilt\":false,\"notifyRepeatedFailure\":false,\"notifySuccess\":false,\"notifyUnstable\":false,\"room\":\"\",\"showCommitList\":false,\"startNotification\":false,\"teamDomain\":\"\",\"token\":\"\"},{}],\"queueItem\":null,\"concurrentBuild\":false,\"downstreamProjects\":[],\"scm\":{},\"upstreamProjects\":[]}";
+        
+        RemoteBuildConfiguration spy = prepareSpy(json);
+        
+        assertFalse(spy.isRemoteJobParameterized("job", null, null, null));
+    }
+    
+    @Test
+    @WithoutJenkins
+    public void givenAJobWithActionsNotRelatedToParameterizedBuild_WhenCheckingIfTheJobIsParameterized_ThenItShouldReturnFalse() throws IOException {
+        
+        String json = "{\"actions\":[{},false],\"description\":\"\",\"displayName\":\"test_remote\",\"displayNameOrNull\":null,\"name\":\"test_remote\",\"url\":\"http://jenkins.com/job/test_remote/\",\"buildable\":true,\"builds\":[],\"color\":\"notbuilt\",\"firstBuild\":null,\"healthReport\":[],\"inQueue\":false,\"keepDependencies\":false,\"lastBuild\":null,\"lastCompletedBuild\":null,\"lastFailedBuild\":null,\"lastStableBuild\":null,\"lastSuccessfulBuild\":null,\"lastUnstableBuild\":null,\"lastUnsuccessfulBuild\":null,\"nextBuildNumber\":1,\"property\":[{},{},{\"includeTestSummary\":false,\"notifyAborted\":false,\"notifyBackToNormal\":false,\"notifyFailure\":false,\"notifyNotBuilt\":false,\"notifyRepeatedFailure\":false,\"notifySuccess\":false,\"notifyUnstable\":false,\"room\":\"\",\"showCommitList\":false,\"startNotification\":false,\"teamDomain\":\"\",\"token\":\"\"},{}],\"queueItem\":null,\"concurrentBuild\":false,\"downstreamProjects\":[],\"scm\":{},\"upstreamProjects\":[]}";
+        
+        RemoteBuildConfiguration spy = prepareSpy(json);
+        
+        assertFalse(spy.isRemoteJobParameterized("job", null, null, null));
+    }
+    
+    @Test
+    @WithoutJenkins
+    public void givenAJobWithActionsRelatedToParameterizedBuild_WhenCheckingIfTheJobIsParameterized_ThenItShouldReturnTrue() throws IOException {
+        
+        String json = "{\"actions\":[{\"parameterDefinitions\":[{\"defaultParameterValue\":{\"value\":\"\"},\"description\":\"\",\"name\":\"test\",\"type\":\"StringParameterDefinition\"},{\"defaultParameterValue\":{\"value\":false},\"description\":\"\",\"name\":\"test2\",\"type\":\"BooleanParameterDefinition\"}]},{},{}],\"description\":\"\",\"displayName\":\"test_remote_parameterized\",\"displayNameOrNull\":null,\"name\":\"test_remote_parameterized\",\"url\":\"http://jenkins.com/job/test_remote_parameterized/\",\"buildable\":true,\"builds\":[],\"color\":\"notbuilt\",\"firstBuild\":null,\"healthReport\":[],\"inQueue\":false,\"keepDependencies\":false,\"lastBuild\":null,\"lastCompletedBuild\":null,\"lastFailedBuild\":null,\"lastStableBuild\":null,\"lastSuccessfulBuild\":null,\"lastUnstableBuild\":null,\"lastUnsuccessfulBuild\":null,\"nextBuildNumber\":1,\"property\":[{},{\"parameterDefinitions\":[{\"defaultParameterValue\":{\"name\":\"test\",\"value\":\"\"},\"description\":\"\",\"name\":\"test\",\"type\":\"StringParameterDefinition\"},{\"defaultParameterValue\":{\"name\":\"test2\",\"value\":false},\"description\":\"\",\"name\":\"test2\",\"type\":\"BooleanParameterDefinition\"}]},{},{\"includeTestSummary\":false,\"notifyAborted\":false,\"notifyBackToNormal\":false,\"notifyFailure\":false,\"notifyNotBuilt\":false,\"notifyRepeatedFailure\":false,\"notifySuccess\":false,\"notifyUnstable\":false,\"room\":\"\",\"showCommitList\":false,\"startNotification\":false,\"teamDomain\":\"\",\"token\":\"\"},{}],\"queueItem\":null,\"concurrentBuild\":false,\"downstreamProjects\":[],\"scm\":{},\"upstreamProjects\":[]}";
+        
+        RemoteBuildConfiguration spy = prepareSpy(json);
+        
+        assertTrue(spy.isRemoteJobParameterized("job", null, null, null));
     }
 }

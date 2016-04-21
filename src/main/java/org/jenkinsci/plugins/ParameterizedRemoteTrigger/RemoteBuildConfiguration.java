@@ -29,6 +29,7 @@ import java.net.URLEncoder;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 
@@ -1182,7 +1183,7 @@ public class RemoteBuildConfiguration extends Builder implements SimpleBuildStep
      * @param listener listner object
      * @return true if the remote job has default parameters set, otherwise false
      */
-    private boolean isRemoteJobParameterized(String jobName, Run build, FilePath workspace, TaskListener listener) {
+    public boolean isRemoteJobParameterized(String jobName, Run build, FilePath workspace, TaskListener listener) {
         boolean isParameterized = false;
         
         //build the proper URL to inspect the remote job
@@ -1194,8 +1195,15 @@ public class RemoteBuildConfiguration extends Builder implements SimpleBuildStep
         try {
             JSONObject response = sendHTTPCall(remoteServerUrl, "GET", build, workspace, listener);
 
-            if(response.getJSONArray("actions").size() >= 1){
-                isParameterized = true;
+            if (response.getJSONArray("actions").size() >= 1) {
+                for (@SuppressWarnings("rawtypes") Iterator iter = response.getJSONArray("actions").iterator(); 
+                        iter.hasNext() && !isParameterized;) {
+                    Object obj = iter.next();
+                    if (obj instanceof JSONObject 
+                            && ((JSONObject) obj).get("parameterDefinitions") != null) {
+                        isParameterized = true;
+                    }
+                }
             }
             
         } catch (IOException e) {
