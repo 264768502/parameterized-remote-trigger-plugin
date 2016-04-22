@@ -5,7 +5,6 @@ import hudson.model.ParametersDefinitionProperty;
 import hudson.model.StringParameterDefinition;
 import net.sf.json.JSONObject;
 
-import org.junit.Ignore;
 import org.junit.Rule;
 import org.junit.Test;
 import org.jvnet.hudson.test.JenkinsRule;
@@ -41,6 +40,7 @@ public class RemoteBuildConfigurationTest {
                 "", true, null, null, false, true, 1);
         project.getBuildersList().add(remoteBuildConfiguration);
 
+        jenkinsRule.waitUntilNoActivity();
         jenkinsRule.buildAndAssertSuccess(project);
     }
 }
