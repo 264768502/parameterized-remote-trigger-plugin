@@ -1,31 +1,17 @@
 package org.jenkinsci.plugins.ParameterizedRemoteTrigger;
 
 import hudson.AbortException;
-import hudson.FilePath;
-import hudson.EnvVars;
-import hudson.Launcher;
 import hudson.Extension;
-import hudson.util.CopyOnWriteList;
-import hudson.util.ListBoxModel;
-import hudson.model.AbstractBuild;
+import hudson.FilePath;
+import hudson.Launcher;
 import hudson.model.BuildListener;
 import hudson.model.Result;
+import hudson.model.AbstractBuild;
 import hudson.model.AbstractProject;
-import hudson.tasks.Builder;
 import hudson.tasks.BuildStepDescriptor;
-import net.sf.json.JSONObject;
-import net.sf.json.JSONArray;
-import net.sf.json.JSONSerializer;
-//import net.sf.json.
-//import net.sf.json.
-
-import net.sf.json.util.JSONUtils;
-
-import org.jenkinsci.plugins.tokenmacro.TokenMacro;
-import org.apache.commons.lang.StringUtils;
-import org.jenkinsci.plugins.tokenmacro.MacroEvaluationException;
-import org.kohsuke.stapler.DataBoundConstructor;
-import org.kohsuke.stapler.StaplerRequest;
+import hudson.tasks.Builder;
+import hudson.util.CopyOnWriteList;
+import hudson.util.ListBoxModel;
 
 import java.io.BufferedReader;
 import java.io.FileNotFoundException;
@@ -44,7 +30,19 @@ import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 
+import net.sf.json.JSONArray;
+import net.sf.json.JSONObject;
+import net.sf.json.JSONSerializer;
+//import net.sf.json.
+//import net.sf.json.
+import net.sf.json.util.JSONUtils;
+
 import org.apache.commons.codec.binary.Base64;
+import org.apache.commons.lang.StringUtils;
+import org.jenkinsci.plugins.tokenmacro.MacroEvaluationException;
+import org.jenkinsci.plugins.tokenmacro.TokenMacro;
+import org.kohsuke.stapler.DataBoundConstructor;
+import org.kohsuke.stapler.StaplerRequest;
 
 /**
  * 
@@ -539,10 +537,13 @@ public class RemoteBuildConfiguration extends Builder {
 
         ConnectionResponse responseRemoteJob = sendHTTPCallAndGetResponse(triggerUrlString, "POST", build, listener);
 
-        RemoteJobInfo remoteBuildInfo = validateRemoteBuild(responseRemoteJob, remoteServerURL, jobName, build, listener);
+        RemoteJob remoteJob = getRemoteJobBuildNumber(responseRemoteJob, remoteServerURL, jobName, build, listener);
 
-        int jobNumber = remoteBuildInfo.getNumber();
-        String jobURL = remoteBuildInfo.getURL();
+        listener.getLogger().println("Remote job location: " + remoteJob.getURL());
+        listener.getLogger().println("Remote job number: " + remoteJob.getBuildNumber());
+
+        int jobNumber = remoteJob.getBuildNumber();
+        String jobURL = remoteJob.getURL();
 
         BuildInfoExporterAction.addBuildInfoExporterAction(build, jobName, jobNumber, Result.NOT_BUILT);
 
@@ -613,154 +614,73 @@ public class RemoteBuildConfiguration extends Builder {
         return true;
     }
 
-    private String getId(String location, BuildListener listener) throws IOException
+    private String getId(String location) throws IOException
     {
-      String loc = null;
-
-      try {
-        loc = location.substring(0, location.lastIndexOf('/'));
-        loc = loc.substring(loc.lastIndexOf('/')+1);
-      }catch(Exception e){
-        this.failBuild(e, listener);
-      }
-      return loc;
+      String loc = location.substring(0, location.lastIndexOf('/'));
+      return loc.substring(loc.lastIndexOf('/')+1);
     }
 
     private String getRemoteJobQueueQuery(String remoteServerURL, String queueNumber, BuildListener listener) throws IOException
     {
-      String query = null;
-
-      try {
-        query = String.format("%s/queue/item/%s/api/json/", remoteServerURL, queueNumber);
-      } catch (Exception e) {
-        this.failBuild(e, listener);
-      }
-      return query;
+      return String.format("%s/queue/item/%s/api/json/", remoteServerURL, queueNumber);
     }
 
-    private RemoteJobInfo getRemoteJobInfo(String queueQuery, AbstractBuild build, BuildListener listener) throws IOException
+    private RemoteJob getRemoteJob(String queueQuery, AbstractBuild build, BuildListener listener) throws IOException
     {
-      String jobURL = null;
-      int jobNumber = 0;
+      JSONObject queueResponse = sendHTTPCall(queueQuery, "GET", build, listener);
 
-      try {
-        JSONObject queueResponse = sendHTTPCall(queueQuery, "GET", build, listener);
-        if (queueResponse.isNullObject()) return null;
+      if (queueResponse.isNullObject())
+        throw new AbortException("Invalid queue response. There was a communication problem or the format is unexpected: " + queueResponse.toString());
 
-        JSONObject remoteJobInfo = queueResponse.getJSONObject("executable");
-        if (remoteJobInfo.isNullObject()) return null;
+      RemoteJobInfo remoteJob = new RemoteJobInfo(queueResponse);
 
-        jobNumber = remoteJobInfo.getInt("number");
-        jobURL = remoteJobInfo.getString("url");
-      }
-      catch (Exception e){
-        this.failBuild(e, listener);
-      }
-      return new RemoteJobInfo(jobNumber, jobURL);
+      if (remoteJob.isBlocked())
+        listener.getLogger().println("The remote job is blocked. Reason: " + remoteJob.getWhy() + ".");
+
+      if (remoteJob.isPending())
+        listener.getLogger().println("The remote job is pending. Reason: " + remoteJob.getWhy() + ".");
+
+      if (remoteJob.isBuildable())
+        listener.getLogger().println("The remote job is buildable. Reason: " + remoteJob.getWhy() + ".");
+
+      if (remoteJob.isCancelled())
+        throw new AbortException("The remote job was canceled.");
+
+      return remoteJob.getRemoteJob();
     }
 
-    private String getRemoteJobQuery(String remoteServerURL, String jobName, BuildListener listener) throws IOException
+    private RemoteJob getRemoteJobBuildNumber(ConnectionResponse responseRemoteJob, String remoteServerURL,
+          String jobName, AbstractBuild build, BuildListener listener) throws IOException, InterruptedException
     {
-      String query = null;
-
-      try {
-        query = String.format("%s/job/%s/api/json/", remoteServerURL, jobName);
-      } catch (Exception e) {
-        this.failBuild(e, listener);
-      }
-      return query;
-    }
-
-    private RemoteJobQueueInfo getRemoteJobQueueInfo(String remoteJobQuery, AbstractBuild build, BuildListener listener) throws IOException
-    {
-      boolean inQueue = false;
-      int queueId = -1;
-      String queueLog = null;
-
-      try {
-        JSONObject remoteJobResponse = sendHTTPCall(remoteJobQuery, "GET", build, listener);
-        if (remoteJobResponse.isNullObject()) return null;
-
-        inQueue = remoteJobResponse.getBoolean("inQueue");
-        if (inQueue == false) return new RemoteJobQueueInfo(inQueue, queueId, queueLog);
-
-        JSONObject queueItem = remoteJobResponse.getJSONObject("queueItem");
-        if (queueItem.isNullObject()) return null;
-
-        queueId = queueItem.getInt("id");
-        queueLog = queueItem.getString("why");
-      }
-      catch (Exception e){
-        this.failBuild(e, listener);
-      }
-
-      return new RemoteJobQueueInfo(inQueue, queueId, queueLog);
-    }
-
-    private RemoteJobInfo validateRemoteBuild(ConnectionResponse responseRemoteJob, String remoteServerURL,
-          String jobName, AbstractBuild build, BuildListener listener) throws IOException
-    {
-      listener.getLogger().println("Validating remote job ...");
-
       String queueLocation = responseRemoteJob.getLocation();
       if ( queueLocation == null ) {
-        this.failBuild(new Exception("Remote job queue location could not be read."), listener);
+        throw new AbortException("Remote job queue location could not be read.");
       } else {
-        listener.getLogger().println("  Remote job queue location: " + queueLocation);
+        listener.getLogger().println("Remote job queue location: " + queueLocation);
       }
 
-      String queueId = getId(queueLocation, listener);
+      String queueId = getId(queueLocation);
 
       if ( queueId == null ) {
-        this.failBuild(new Exception("Remote job queue number could not be read."), listener);
+        throw new AbortException("Remote job queue number could not be read.");
       } else {
-        listener.getLogger().println("  Remote job queue number: " + queueId);
-      }
-
-      int queueNumber = 0;
-      try {
-        queueNumber = Integer.parseInt(queueId);
-      }
-      catch (Exception e){
-        this.failBuild(e, listener);
+        listener.getLogger().println("Remote job queue number: " + queueId);
       }
 
       String queueQuery = getRemoteJobQueueQuery(remoteServerURL, queueId, listener);
-      RemoteJobInfo remoteJobInfo = getRemoteJobInfo(queueQuery, build, listener);
+      RemoteJob remoteJob = getRemoteJob(queueQuery, build, listener);
 
-      String remoteJobQuery = null;
-      RemoteJobQueueInfo remoteJobQueueInfo = null;
+      if (remoteJob != null) return remoteJob;
 
-      if (remoteJobInfo == null) {
-        listener.getLogger().println("  Waiting for queue response ...");
-        remoteJobQuery = getRemoteJobQuery(remoteServerURL, jobName, listener);
-        remoteJobQueueInfo = getRemoteJobQueueInfo(remoteJobQuery, build, listener);
+      listener.getLogger().println("Waiting for remote job ...");
+
+      while (remoteJob == null)
+      {
+        listener.getLogger().println("Waiting for " + this.pollInterval + " seconds until next poll.");
+        Thread.sleep(this.pollInterval * 1000);
+        remoteJob = getRemoteJob(queueQuery, build, listener);
       }
-
-      while ((remoteJobInfo == null && remoteJobQueueInfo == null) ||
-            (remoteJobInfo == null && remoteJobQueueInfo.getInQueue() == true
-            && remoteJobQueueInfo.getQueueId() <= queueNumber)) {
-
-        listener.getLogger().println("    Waiting for " + this.pollInterval + " seconds until next poll.");
-        listener.getLogger().println("    " + remoteJobQueueInfo.getQueueLog());
-        try {
-          Thread.sleep(this.pollInterval * 1000);
-        } catch (InterruptedException e) {
-          this.failBuild(e, listener);
-        }
-        remoteJobInfo = getRemoteJobInfo(queueQuery, build, listener);
-        remoteJobQueueInfo = getRemoteJobQueueInfo(remoteJobQuery, build, listener);
-      }
-
-      if (remoteJobInfo == null && remoteJobQueueInfo.getInQueue() == false ||
-          remoteJobInfo == null && remoteJobQueueInfo.getQueueId() > queueNumber)
-        this.failBuild(new Exception("The remote job is no longer in the remote server queue.\n"
-              + "The remote job was canceled before being executed"), listener);
-
-      listener.getLogger().println("Remote job validation has sucessfully finished.");
-      listener.getLogger().println("Remote job location: " + remoteJobInfo.getURL());
-      listener.getLogger().println("Remote job number: " + remoteJobInfo.getNumber());
-      return new RemoteJobInfo(remoteJobInfo.getNumber(), remoteJobInfo.getURL());
+      return remoteJob;
     }
 
     private String findParameter(String parameter, List<String> parameters) {
