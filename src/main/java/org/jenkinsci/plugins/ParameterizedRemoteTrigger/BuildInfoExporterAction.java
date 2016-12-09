@@ -1,20 +1,21 @@
 package org.jenkinsci.plugins.ParameterizedRemoteTrigger;
 
-import hudson.EnvVars;
-import hudson.model.EnvironmentContributingAction;
-import hudson.model.Result;
-import hudson.model.AbstractBuild;
-import hudson.model.Run;
-
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 
+import hudson.EnvVars;
+import hudson.model.AbstractBuild;
+import hudson.model.EnvironmentContributingAction;
+import hudson.model.Result;
+import hudson.model.Run;
+
 class BuildInfoExporterAction implements EnvironmentContributingAction {
 
     public static final String JOB_NAME_VARIABLE = "LAST_TRIGGERED_JOB_NAME";
     public static final String ALL_JOBS_NAME_VARIABLE = "TRIGGERED_JOB_NAMES";
+    public static final String BUILD_URL_VARIABLE_PREFIX = "TRIGGERED_BUILD_URL_";
     public static final String BUILD_NUMBER_VARIABLE_PREFIX = "TRIGGERED_BUILD_NUMBER_";
     public static final String ALL_BUILD_NUMBER_VARIABLE_PREFIX = "TRIGGERED_BUILD_NUMBERS_";
     public static final String BUILD_RESULT_VARIABLE_PREFIX = "TRIGGERED_BUILD_RESULT_";
@@ -30,8 +31,8 @@ class BuildInfoExporterAction implements EnvironmentContributingAction {
         this.builds.add(buildRef);
     }
 
-    static BuildInfoExporterAction addBuildInfoExporterAction(Run<?, ?> parentBuild, String triggeredProject, int buildNumber, Result buildResult) {
-        BuildReference reference = new BuildReference(triggeredProject, buildNumber, buildResult);
+    static BuildInfoExporterAction addBuildInfoExporterAction(Run<?, ?> parentBuild, String triggeredProject, int buildNumber, String jobURL, Result buildResult) {
+        BuildReference reference = new BuildReference(triggeredProject, buildNumber, jobURL, buildResult);
 
         BuildInfoExporterAction action = parentBuild.getAction(BuildInfoExporterAction.class);
         if (action == null) {
@@ -51,11 +52,13 @@ class BuildInfoExporterAction implements EnvironmentContributingAction {
         public final String projectName;
         public final int buildNumber;
         public final Result buildResult;
+        public final String jobURL;
 
-        public BuildReference(String projectName, int buildNumber, Result buildResult) {
+        public BuildReference(String projectName, int buildNumber, String jobURL, Result buildResult) {
             this.projectName = projectName;
             this.buildNumber = buildNumber;
             this.buildResult = buildResult;
+            this.jobURL = jobURL;
         }
     }
 
@@ -96,6 +99,7 @@ class BuildInfoExporterAction implements EnvironmentContributingAction {
             }
             if (lastBuild != null) {
                 env.put(BUILD_NUMBER_VARIABLE_PREFIX + sanatizedBuildName, Integer.toString(lastBuild.buildNumber));
+                env.put(BUILD_URL_VARIABLE_PREFIX + sanatizedBuildName, lastBuild.jobURL);
                 env.put(BUILD_RESULT_VARIABLE_PREFIX + sanatizedBuildName, lastBuild.buildResult.toString());
             }
         }

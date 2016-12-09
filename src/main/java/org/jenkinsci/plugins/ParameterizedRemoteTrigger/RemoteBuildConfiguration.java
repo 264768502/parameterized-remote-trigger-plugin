@@ -1,20 +1,5 @@
 package org.jenkinsci.plugins.ParameterizedRemoteTrigger;
 
-import hudson.AbortException;
-import hudson.Extension;
-import hudson.FilePath;
-import hudson.Launcher;
-import hudson.model.BuildListener;
-import hudson.model.Result;
-import hudson.model.TaskListener;
-import hudson.model.AbstractBuild;
-import hudson.model.AbstractProject;
-import hudson.model.Run;
-import hudson.tasks.BuildStepDescriptor;
-import hudson.tasks.Builder;
-import hudson.util.CopyOnWriteList;
-import hudson.util.ListBoxModel;
-
 import java.io.BufferedReader;
 import java.io.FileNotFoundException;
 import java.io.FileReader;
@@ -33,6 +18,27 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 
+import org.apache.commons.codec.binary.Base64;
+import org.apache.commons.lang.StringUtils;
+import org.jenkinsci.plugins.tokenmacro.MacroEvaluationException;
+import org.jenkinsci.plugins.tokenmacro.TokenMacro;
+import org.kohsuke.stapler.DataBoundConstructor;
+import org.kohsuke.stapler.StaplerRequest;
+
+import hudson.AbortException;
+import hudson.Extension;
+import hudson.FilePath;
+import hudson.Launcher;
+import hudson.model.AbstractBuild;
+import hudson.model.AbstractProject;
+import hudson.model.BuildListener;
+import hudson.model.Result;
+import hudson.model.Run;
+import hudson.model.TaskListener;
+import hudson.tasks.BuildStepDescriptor;
+import hudson.tasks.Builder;
+import hudson.util.CopyOnWriteList;
+import hudson.util.ListBoxModel;
 import jenkins.tasks.SimpleBuildStep;
 import net.sf.json.JSONArray;
 import net.sf.json.JSONObject;
@@ -40,13 +46,6 @@ import net.sf.json.JSONSerializer;
 //import net.sf.json.
 //import net.sf.json.
 import net.sf.json.util.JSONUtils;
-
-import org.apache.commons.codec.binary.Base64;
-import org.apache.commons.lang.StringUtils;
-import org.jenkinsci.plugins.tokenmacro.MacroEvaluationException;
-import org.jenkinsci.plugins.tokenmacro.TokenMacro;
-import org.kohsuke.stapler.DataBoundConstructor;
-import org.kohsuke.stapler.StaplerRequest;
 
 /**
  * 
@@ -552,11 +551,11 @@ public class RemoteBuildConfiguration extends Builder implements SimpleBuildStep
 
         listener.getLogger().println("Remote job location: " + remoteJob.getURL());
         listener.getLogger().println("Remote job number: " + remoteJob.getBuildNumber());
-
+        
         int jobNumber = remoteJob.getBuildNumber();
         String jobURL = remoteJob.getURL();
 
-        BuildInfoExporterAction.addBuildInfoExporterAction(build, jobName, jobNumber, Result.NOT_BUILT);
+        BuildInfoExporterAction.addBuildInfoExporterAction(build, jobName, jobNumber, jobURL, Result.NOT_BUILT);
 
         // If we are told to block until remoteBuildComplete:
         if (this.getBlockBuildUntilComplete()) {
@@ -600,7 +599,7 @@ public class RemoteBuildConfiguration extends Builder implements SimpleBuildStep
                 buildStatusStr = getBuildStatus(jobLocation, build, workspace, listener);
             }
             listener.getLogger().println("Remote build finished with status " + buildStatusStr + ".");
-            BuildInfoExporterAction.addBuildInfoExporterAction(build, jobName, jobNumber, Result.fromString(buildStatusStr));
+            BuildInfoExporterAction.addBuildInfoExporterAction(build, jobName, jobNumber, jobURL, Result.fromString(buildStatusStr));
 
             if (this.getEnhancedLogging()) {
                 String consoleOutput = getConsoleOutput(jobURL, "GET", build, workspace, listener);
